@@ -263,16 +263,28 @@ DECL_CONSTANT_STR("RESERVE_PINS_USB", "PA11,PA12");
 void
 usb_init(void)
 {
-    // Pull the D+ pin low briefly to signal a new connection
-    gpio_out_setup(GPIO('A', 12), 0);
-    udelay(5000);
-    gpio_in_setup(GPIO('A', 12), 0);
-
     // Setup USB packet memory
     btable_configure();
 
     // Enable USB clock
     enable_pclock(USB_BASE);
+
+    // Pull the D+ pin low briefly to signal a new connection
+    if (CONFIG_MACH_STM32F1) {
+        gpio_out_setup(GPIO('A', 12), 0);
+        udelay(5000);
+        gpio_in_setup(GPIO('A', 12), 1);
+    } else {
+#if CONFIG_MACH_STM32F0
+        USB->BCDR = 0;
+        udelay(5000);
+        USB->BCDR = USB_BCDR_DPPU;
+        if (CONFIG_STM32_CLOCK_REF_INTERNAL) {
+            enable_pclock(CRS_BASE);
+            CRS->CR |= CRS_CR_AUTOTRIMEN | CRS_CR_CEN;
+        }
+#endif
+    }
 
     // Reset usb controller and enable interrupts
     USB->CNTR = USB_CNTR_FRES;

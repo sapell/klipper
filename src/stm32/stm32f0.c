@@ -93,32 +93,55 @@ usb_request_bootloader(void)
 void
 clock_setup(void)
 {
+    // Set flash latency
+    FLASH->ACR = (1 << FLASH_ACR_LATENCY_Pos) | FLASH_ACR_PRFTBE;
+
     // Configure and enable PLL
     uint32_t cfgr;
     if (CONFIG_CLOCK_REF_8M) {
         // Configure 48Mhz PLL from external 8Mhz crystal (HSE)
         RCC->CR |= RCC_CR_HSEON;
         cfgr = (1 << RCC_CFGR_PLLSRC_Pos) | ((6 - 2) << RCC_CFGR_PLLMUL_Pos);
+        RCC->CFGR = cfgr;
+        RCC->CR |= RCC_CR_PLLON;
+
+        // Wait for PLL lock
+        while (!(RCC->CR & RCC_CR_PLLRDY))
+            ;
+
+        // Switch system clock to PLL
+        RCC->CFGR = cfgr | RCC_CFGR_SW_PLL;
+        while ((RCC->CFGR & RCC_CFGR_SWS_Msk) != RCC_CFGR_SWS_PLL)
+            ;
+    } else if (CONFIG_MACH_STM32F042) {
+        // Use HSI48 on the STM32F042
+        RCC->CR2 |= RCC_CR2_HSI48ON;
+        while (!(RCC->CR2 & RCC_CR2_HSI48RDY))
+            ;
+        RCC->CFGR = RCC_CFGR_SW_HSI48;
     } else {
         // Configure 48Mhz PLL from internal 8Mhz oscillator (HSI)
         cfgr = (0 << RCC_CFGR_PLLSRC_Pos) | ((12 - 2) << RCC_CFGR_PLLMUL_Pos);
+        RCC->CFGR = cfgr;
+        RCC->CR |= RCC_CR_PLLON;
+
+        // Wait for PLL lock
+        while (!(RCC->CR & RCC_CR_PLLRDY))
+            ;
+
+        // Switch system clock to PLL
+        RCC->CFGR = cfgr | RCC_CFGR_SW_PLL;
+        while ((RCC->CFGR & RCC_CFGR_SWS_Msk) != RCC_CFGR_SWS_PLL)
+            ;
     }
-    RCC->CFGR = cfgr;
-    RCC->CR |= RCC_CR_PLLON;
 
-    // Set flash latency
-    FLASH->ACR = (1 << FLASH_ACR_LATENCY_Pos) | FLASH_ACR_PRFTBE;
-
-    // Wait for PLL lock
-    while (!(RCC->CR & RCC_CR_PLLRDY))
-        ;
+    // Enable USB pins on 20 pin stm32f042
+    if (CONFIG_STM32F042_USB_PIN_SWAP) {
+        enable_pclock(SYSCFG_BASE);
+        SYSCFG->CFGR1 |= SYSCFG_CFGR1_PA11_PA12_RMP;
+    }
 
     // Enable USB clock
-    if (CONFIG_USBSERIAL)
+    if (CONFIG_USBSERIAL && CONFIG_CLOCK_REF_8M)
         RCC->CFGR3 = RCC_CFGR3_USBSW;
-
-    // Switch system clock to PLL
-    RCC->CFGR = cfgr | RCC_CFGR_SW_PLL;
-    while ((RCC->CFGR & RCC_CFGR_SWS_Msk) != RCC_CFGR_SWS_PLL)
-        ;
 }
